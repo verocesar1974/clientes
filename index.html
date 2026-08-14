@@ -1,0 +1,368 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gestor Documental de Clientes</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- Vue 3 -->
+  <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+</head>
+<body class="bg-slate-50 text-slate-800 font-sans antialiased h-screen overflow-hidden">
+
+  <div id="app" class="flex h-full">
+    <!-- BARRA LATERAL / LISTA DE CLIENTES -->
+    <aside class="w-80 bg-white border-r border-slate-200 flex flex-col h-full shrink-0">
+      <!-- Header Lateral -->
+      <div class="p-4 border-b border-slate-100 flex items-center justify-between">
+        <div class="flex items-center space-x-2">
+          <div class="w-8 h-8 rounded-lg bg-blue-600 text-white flex items-center justify-center font-bold text-lg">
+            Doc
+          </div>
+          <h1 class="font-semibold text-slate-800 text-lg">Gestor Doc</h1>
+        </div>
+        <button @click="showAddClientModal = true" class="p-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition flex items-center space-x-1 text-sm font-medium">
+          <i data-lucide="user-plus" class="w-4 h-4"></i>
+          <span>Nuevo</span>
+        </button>
+      </div>
+
+      <!-- Buscador de Clientes -->
+      <div class="p-3 border-b border-slate-100">
+        <div class="relative">
+          <i data-lucide="search" class="w-4 h-4 absolute left-3 top-3 text-slate-400"></i>
+          <input 
+            v-model="searchQuery" 
+            type="text" 
+            placeholder="Buscar cliente..." 
+            class="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition"
+          >
+        </div>
+      </div>
+
+      <!-- Lista de Clientes -->
+      <div class="flex-1 overflow-y-auto p-2 space-y-1">
+        <div 
+          v-for="client in filteredClients" 
+          :key="client.id"
+          @click="selectClient(client)"
+          :class="[
+            'p-3 rounded-xl cursor-pointer transition flex items-center justify-between',
+            selectedClient?.id === client.id ? 'bg-blue-50/80 border border-blue-200/60 text-blue-900' : 'hover:bg-slate-50 text-slate-700'
+          ]"
+        >
+          <div class="flex items-center space-x-3 overflow-hidden">
+            <div class="w-9 h-9 rounded-full bg-slate-200 text-slate-600 font-semibold flex items-center justify-center shrink-0">
+              {{ client.name.charAt(0).toUpperCase() }}
+            </div>
+            <div class="truncate">
+              <p class="font-medium text-sm truncate">{{ client.name }}</p>
+              <p class="text-xs text-slate-400 truncate">{{ client.taxId || 'Sin ID fiscal' }}</p>
+            </div>
+          </div>
+          <i data-lucide="chevron-right" class="w-4 h-4 text-slate-400 shrink-0"></i>
+        </div>
+
+        <div v-if="filteredClients.length === 0" class="p-6 text-center text-slate-400 text-sm">
+          No se encontraron clientes.
+        </div>
+      </div>
+    </aside>
+
+    <!-- ÁREA PRINCIPAL / GESTOR DE CARPETAS Y ARCHIVOS -->
+    <main class="flex-1 flex flex-col h-full bg-slate-50 overflow-hidden">
+      <template v-if="selectedClient">
+        <!-- Encabezado del Cliente -->
+        <header class="bg-white border-b border-slate-200 p-6 flex justify-between items-center">
+          <div>
+            <h2 class="text-2xl font-bold text-slate-900">{{ selectedClient.name }}</h2>
+            <p class="text-sm text-slate-500 flex items-center gap-4 mt-1">
+              <span><strong>ID/CUIT:</strong> {{ selectedClient.taxId || 'N/A' }}</span>
+              <span><strong>Email:</strong> {{ selectedClient.email || 'N/A' }}</span>
+            </p>
+          </div>
+          <button @click="deleteClient(selectedClient.id)" class="text-rose-600 hover:text-rose-700 text-sm font-medium flex items-center space-x-1 border border-rose-200 px-3 py-1.5 rounded-lg hover:bg-rose-50 transition">
+            <i data-lucide="trash-2" class="w-4 h-4"></i>
+            <span>Eliminar Cliente</span>
+          </button>
+        </header>
+
+        <!-- Navegación de Carpetas -->
+        <div class="bg-white border-b border-slate-200 px-6 flex space-x-6">
+          <button 
+            v-for="folder in folders" 
+            :key="folder"
+            @click="activeFolder = folder"
+            :class="[
+              'py-3 text-sm font-medium border-b-2 transition flex items-center space-x-2',
+              activeFolder === folder ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-800'
+            ]"
+          >
+            <i data-lucide="folder" class="w-4 h-4"></i>
+            <span>{{ folder }}</span>
+            <span class="bg-slate-100 text-slate-600 text-xs px-2 py-0.5 rounded-full font-semibold">
+              {{ getFilesCount(folder) }}
+            </span>
+          </button>
+        </div>
+
+        <!-- Filtros y Drag & Drop -->
+        <div class="p-6 flex-1 overflow-y-auto flex flex-col space-y-6">
+          <!-- Zona de Subida (Drag & Drop) -->
+          <div 
+            @dragover.prevent="isDragging = true"
+            @dragleave.prevent="isDragging = false"
+            @drop.prevent="handleDrop"
+            :class="[
+              'border-2 border-dashed rounded-2xl p-6 text-center transition flex flex-col items-center justify-center cursor-pointer',
+              isDragging ? 'border-blue-500 bg-blue-50/50' : 'border-slate-300 bg-white hover:border-slate-400'
+            ]"
+            @click="$refs.fileInput.click()"
+          >
+            <input type="file" ref="fileInput" @change="handleFileUpload" class="hidden" multiple>
+            <div class="w-12 h-12 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center mb-2">
+              <i data-lucide="upload-cloud" class="w-6 h-6"></i>
+            </div>
+            <p class="text-sm font-medium text-slate-700">Arrastra archivos aquí o <span class="text-blue-600 underline">selecciónalos</span></p>
+            <p class="text-xs text-slate-400 mt-1">Se guardarán automáticamente en la carpeta "{{ activeFolder }}"</p>
+          </div>
+
+          <!-- Barra de Filtro de Archivos -->
+          <div class="flex items-center justify-between">
+            <h3 class="font-semibold text-slate-800 text-lg flex items-center gap-2">
+              <i data-lucide="folder-open" class="w-5 h-5 text-blue-600"></i>
+              {{ activeFolder }}
+            </h3>
+            <div class="flex items-center space-x-2">
+              <span class="text-xs text-slate-400 font-medium">Filtrar tipo:</span>
+              <select v-model="fileTypeFilter" class="bg-white border border-slate-200 rounded-lg text-xs px-3 py-1.5 text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <option value="ALL">Todos los tipos</option>
+                <option value="pdf">Documentos PDF</option>
+                <option value="image">Imágenes</option>
+                <option value="other">Otros</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Lista de Documentos -->
+          <div class="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm">
+            <table class="w-full text-left border-collapse" v-if="filteredFiles.length > 0">
+              <thead>
+                <tr class="bg-slate-50 border-b border-slate-200 text-xs text-slate-500 font-semibold uppercase tracking-wider">
+                  <th class="p-3 pl-4">Documento</th>
+                  <th class="p-3">Tamaño</th>
+                  <th class="p-3">Fecha</th>
+                  <th class="p-3 text-right pr-4">Acciones</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-slate-100 text-sm text-slate-700">
+                <tr v-for="file in filteredFiles" :key="file.id" class="hover:bg-slate-50/80 transition">
+                  <td class="p-3 pl-4 font-medium flex items-center space-x-3">
+                    <i data-lucide="file-text" class="w-4 h-4 text-blue-500 shrink-0"></i>
+                    <span class="truncate max-w-xs">{{ file.name }}</span>
+                  </td>
+                  <td class="p-3 text-slate-400 text-xs">{{ formatBytes(file.size) }}</td>
+                  <td class="p-3 text-slate-400 text-xs">{{ file.date }}</td>
+                  <td class="p-3 text-right pr-4 space-x-2">
+                    <button @click="renameFile(file)" class="text-slate-400 hover:text-slate-700 p-1" title="Renombrar">
+                      <i data-lucide="edit-2" class="w-4 h-4"></i>
+                    </button>
+                    <button @click="deleteFile(file.id)" class="text-slate-400 hover:text-rose-600 p-1" title="Eliminar">
+                      <i data-lucide="trash" class="w-4 h-4"></i>
+                    </button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+            <div v-else class="p-8 text-center text-slate-400 text-sm">
+              No hay documentos guardados en esta carpeta.
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <!-- Estado Vacío (Sin cliente seleccionado) -->
+      <div v-else class="flex-1 flex flex-col items-center justify-center text-center p-8">
+        <div class="w-16 h-16 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center mb-4">
+          <i data-lucide="folder-search" class="w-8 h-8"></i>
+        </div>
+        <h3 class="text-lg font-semibold text-slate-800">Ningún cliente seleccionado</h3>
+        <p class="text-sm text-slate-400 max-w-xs mt-1">Selecciona un cliente del menú lateral o agrega uno nuevo para acceder a su expediente.</p>
+      </div>
+    </main>
+
+    <!-- MODAL: AGREGAR CLIENTE -->
+    <div v-if="showAddClientModal" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+      <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border border-slate-100">
+        <h3 class="text-lg font-bold text-slate-900 mb-4">Nuevo Cliente</h3>
+        <form @submit.prevent="addClient" class="space-y-4">
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">Nombre completo / Razón Social *</label>
+            <input v-model="newClient.name" required type="text" placeholder="Ej. Juan Pérez" class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none">
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">CUIT / Identificación Fiscal</label>
+            <input v-model="newClient.taxId" type="text" placeholder="20-12345678-9" class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none">
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">Correo Electrónico</label>
+            <input v-model="newClient.email" type="email" placeholder="cliente@correo.com" class="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none">
+          </div>
+          <div class="flex justify-end space-x-3 pt-2">
+            <button type="button" @click="showAddClientModal = false" class="px-4 py-2 text-sm text-slate-600 hover:bg-slate-100 rounded-lg font-medium transition">Cancelar</button>
+            <button type="submit" class="px-4 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition">Guardar Cliente</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const { createApp, ref, computed, onMounted, nextTick } = Vue;
+
+    createApp({
+      setup() {
+        const clients = ref(JSON.parse(localStorage.getItem('doc_clients') || '[]'));
+        const files = ref(JSON.parse(localStorage.getItem('doc_files') || '[]'));
+        const selectedClient = ref(null);
+        const searchQuery = ref('');
+        const activeFolder = ref('Identificaciones');
+        const fileTypeFilter = ref('ALL');
+        const isDragging = ref(false);
+        const showAddClientModal = ref(false);
+        const newClient = ref({ name: '', taxId: '', email: '' });
+
+        const folders = ['Identificaciones', 'Contratos', 'Facturas', 'Historial'];
+
+        const updateIcons = () => {
+          nextTick(() => { if (window.lucide) lucide.createIcons(); });
+        };
+
+        const filteredClients = computed(() => {
+          if (!searchQuery.value) return clients.value;
+          const q = searchQuery.value.toLowerCase();
+          return clients.value.filter(c => 
+            c.name.toLowerCase().includes(q) || (c.taxId && c.taxId.includes(q))
+          );
+        });
+
+        const filteredFiles = computed(() => {
+          if (!selectedClient.value) return [];
+          return files.value.filter(f => {
+            const matchesClient = f.clientId === selectedClient.value.id;
+            const matchesFolder = f.folder === activeFolder.value;
+            let matchesType = true;
+            if (fileTypeFilter.value === 'pdf') matchesType = f.type.includes('pdf');
+            else if (fileTypeFilter.value === 'image') matchesType = f.type.includes('image');
+            else if (fileTypeFilter.value === 'other') matchesType = !f.type.includes('pdf') && !f.type.includes('image');
+            return matchesClient && matchesFolder && matchesType;
+          });
+        });
+
+        const selectClient = (client) => {
+          selectedClient.value = client;
+          updateIcons();
+        };
+
+        const addClient = () => {
+          if (!newClient.value.name) return;
+          const client = {
+            id: Date.now(),
+            name: newClient.value.name,
+            taxId: newClient.value.taxId,
+            email: newClient.value.email
+          };
+          clients.value.push(client);
+          localStorage.setItem('doc_clients', JSON.stringify(clients.value));
+          newClient.value = { name: '', taxId: '', email: '' };
+          showAddClientModal.value = false;
+          selectClient(client);
+        };
+
+        const deleteClient = (id) => {
+          if (confirm('¿Deseas eliminar este cliente y todos sus registros?')) {
+            clients.value = clients.value.filter(c => c.id !== id);
+            files.value = files.value.filter(f => f.clientId !== id);
+            localStorage.setItem('doc_clients', JSON.stringify(clients.value));
+            localStorage.setItem('doc_files', JSON.stringify(files.value));
+            selectedClient.value = null;
+            updateIcons();
+          }
+        };
+
+        const getFilesCount = (folder) => {
+          if (!selectedClient.value) return 0;
+          return files.value.filter(f => f.clientId === selectedClient.value.id && f.folder === folder).length;
+        };
+
+        const handleFileUpload = (e) => {
+          const uploadedFiles = Array.from(e.target.files);
+          processFiles(uploadedFiles);
+        };
+
+        const handleDrop = (e) => {
+          isDragging.value = false;
+          const droppedFiles = Array.from(e.dataTransfer.files);
+          processFiles(droppedFiles);
+        };
+
+        const processFiles = (fileList) => {
+          fileList.forEach(file => {
+            const doc = {
+              id: Date.now() + Math.random(),
+              clientId: selectedClient.value.id,
+              folder: activeFolder.value,
+              name: file.name,
+              size: file.size,
+              type: file.type,
+              date: new Date().toLocaleDateString('es-AR')
+            };
+            files.value.push(doc);
+          });
+          localStorage.setItem('doc_files', JSON.stringify(files.value));
+          updateIcons();
+        };
+
+        const renameFile = (file) => {
+          const newName = prompt('Ingresa el nuevo nombre para el archivo:', file.name);
+          if (newName && newName.trim() !== '') {
+            file.name = newName.trim();
+            localStorage.setItem('doc_files', JSON.stringify(files.value));
+          }
+        };
+
+        const deleteFile = (id) => {
+          if (confirm('¿Eliminar este documento?')) {
+            files.value = files.value.filter(f => f.id !== id);
+            localStorage.setItem('doc_files', JSON.stringify(files.value));
+            updateIcons();
+          }
+        };
+
+        const formatBytes = (bytes) => {
+          if (bytes === 0) return '0 Bytes';
+          const k = 1024;
+          const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+          const i = Math.floor(Math.log(bytes) / Math.log(k));
+          return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+        };
+
+        onMounted(() => {
+          updateIcons();
+        });
+
+        return {
+          clients, searchQuery, filteredClients, selectedClient, selectClient,
+          showAddClientModal, newClient, addClient, deleteClient,
+          folders, activeFolder, files, filteredFiles, getFilesCount,
+          fileTypeFilter, isDragging, handleFileUpload, handleDrop,
+          renameFile, deleteFile, formatBytes
+        };
+      }
+    }).mount('#app');
+  </script>
+</body>
+</html>
